@@ -43,8 +43,6 @@ public class Proxy implements Runnable {
 				try {
 					bytesRead = input.read(inBytes);
 
-					//System.out.println(new String(inBytes));
-
 					if (bytesRead > 0) {
 						output.write(inBytes, 0, bytesRead);
 						output.flush();
@@ -52,7 +50,7 @@ public class Proxy implements Runnable {
 					
 					Arrays.fill(inBytes, (byte) 0);
 				} catch (IOException e) {
-					// Socket has closed
+					System.out.println("Socket closed.");
 					return;
 				}
 			} while (bytesRead > 0);
@@ -68,14 +66,13 @@ public class Proxy implements Runnable {
 	public void run() {
 		Socket serverSocket = null;
 
-
 		try {
 			boolean permitAcquired = rateLimiter.tryAcquire(5, TimeUnit.SECONDS);
 			BufferedReader input = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 			OutputStreamWriter output = new OutputStreamWriter(clientSocket.getOutputStream());
 
 			if (!permitAcquired) {
-				output.write("HTTP/1.0 503 Service Unavailable\r\n\r\n");
+				output.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
 				output.flush();
 				
 				clientSocket.close();
@@ -103,8 +100,8 @@ public class Proxy implements Runnable {
 	        		int remotePort = Integer.parseInt(matcher.group(2));
 	        		System.out.println("Connection to " + remoteHost + ":" + remotePort + " requested.");
 	        		
-	        		if (!allowedURLs.validURL(remoteHost)) {
-	        			System.out.println(remoteHost + " is not a whitelisted address.");
+	        		if (!allowedURLs.validURL(remoteHost) || remotePort != 443) {
+	        			System.out.println(remoteHost + ":" + remotePort + " is not a whitelisted address.");
 
 	        			output.write("HTTP/" + matcher.group(3) + " 502 Bad Gateway\r\n\r\n");
 	        			output.flush();
@@ -117,10 +114,15 @@ public class Proxy implements Runnable {
 	        		output.write("HTTP/" + matcher.group(3) + " 200 Connection established\r\n\r\n");
 	        		output.flush();
 	        		
+	        		clientSocket.setSoTimeout(10 * 1000);
+	        		serverSocket.setSoTimeout(10 * 1000);
+	        		
 	        		SocketForwarder serverInputToClient = new SocketForwarder(serverSocket.getInputStream(), clientSocket.getOutputStream());
 	        		SocketForwarder clientInputToServer = new SocketForwarder(clientSocket.getInputStream(), serverSocket.getOutputStream());
 	        		Thread serverInputToClientThread = new Thread(serverInputToClient);
 	        		serverInputToClientThread.start();
+	        		System.out.println("Forwarding server input to client.");
+	        		System.out.println("Forwarding client input to server.");
 	        		clientInputToServer.run();
 	        	} catch (IOException | NumberFormatException e) {
 	        		output.write("HTTP/" + matcher.group(3) + " 502 Bad Gateway\r\n\r\n");
@@ -134,6 +136,7 @@ public class Proxy implements Runnable {
 		} catch (IOException e) {
 			System.out.println("Socket operation failed. " + e.toString());
 		} finally {
+			System.out.println("Closing sockets.");
 			try {
 				if (clientSocket != null) {
 					clientSocket.close();
@@ -145,7 +148,6 @@ public class Proxy implements Runnable {
 			} catch (IOException e) {
 				System.out.println("Failed to close socket. " + e.toString());
 			}
-			
 		}
 	}
 }

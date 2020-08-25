@@ -13,9 +13,10 @@ public class AllowedURLs {
 		// maybe should use regex
 		this.addURL("api.giphy.com");
 		this.addURL("api.giphy.com.");
-		// The IPs don't work
+		// Using an IP doesn't work?
 		this.addURL("199.232.34.2");
 		this.addURL("151.101.202.2");
+		this.addURL("151.101.206.2");
 	}
 
 	public void addURL(String url) {
