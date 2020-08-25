@@ -1,16 +1,15 @@
 package giphyproxy;
 
 import java.io.IOException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.SSLSocket;
 
+import com.google.common.util.concurrent.RateLimiter;
+
 public class Server {
 	private final int port;
 	private final AllowedURLs allowedURLs = new AllowedURLs();
-	private ExecutorService threadPool = Executors.newFixedThreadPool(50);
 	
 	public Server(int port) {
 		this.port = port;
@@ -18,6 +17,8 @@ public class Server {
 
 	public void run() {
 		SSLServerSocket serverSocket = null;
+		RateLimiter rateLimiter = RateLimiter.create(50);
+
 		try {
 			SSLServerSocketFactory sslssf = (SSLServerSocketFactory) SSLServerSocketFactory.getDefault();
 			serverSocket = (SSLServerSocket) sslssf.createServerSocket(port);
@@ -25,7 +26,8 @@ public class Server {
 			while (true) {
 				SSLSocket socket  = (SSLSocket) serverSocket.accept();
 
-	            threadPool.execute(new Proxy(socket, allowedURLs));
+				Thread proxyThread = new Thread(new Proxy(socket, allowedURLs, rateLimiter));
+				proxyThread.start();
 			}
 
 		} catch (IOException e) {

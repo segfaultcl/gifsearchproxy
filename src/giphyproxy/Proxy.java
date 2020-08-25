@@ -8,17 +8,22 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import com.google.common.util.concurrent.RateLimiter;
 
 public class Proxy implements Runnable {
 	private final Socket clientSocket;
 	private final Pattern CONNECT_PATTERN = Pattern.compile("CONNECT (.+):(.+) HTTP/(1[.][01])", Pattern.CASE_INSENSITIVE);
 	private final AllowedURLs allowedURLs;
+	private final RateLimiter rateLimiter;
 
-	public Proxy(Socket clientSocket, AllowedURLs allowedURLs) {
+	public Proxy(Socket clientSocket, AllowedURLs allowedURLs, RateLimiter rateLimiter) {
 		this.clientSocket = clientSocket;
 		this.allowedURLs = allowedURLs;
+		this.rateLimiter = rateLimiter;
 	}
 	
 	private class SocketForwarder implements Runnable {
@@ -63,9 +68,20 @@ public class Proxy implements Runnable {
 	public void run() {
 		Socket serverSocket = null;
 
+
 		try {
+			boolean permitAcquired = rateLimiter.tryAcquire(5, TimeUnit.SECONDS);
 			BufferedReader input = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 			OutputStreamWriter output = new OutputStreamWriter(clientSocket.getOutputStream());
+
+			if (!permitAcquired) {
+				output.write("HTTP/1.0 503 Service Unavailable\r\n\r\n");
+				output.flush();
+				
+				clientSocket.close();
+				return;
+			}
+
 			StringBuilder builder = new StringBuilder(); 
 
 			do {
